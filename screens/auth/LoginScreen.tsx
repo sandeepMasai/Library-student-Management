@@ -8,15 +8,15 @@ export default function LoginScreen() {
   const [pin, setPin] = useState('');
   const login = useAppStore((state) => state.login);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!username || !pin) {
       Alert.alert('Error', 'Please enter username/mobile and PIN');
       return;
     }
     
-    const success = login(username, pin);
-    if (!success) {
-      Alert.alert('Error', 'Invalid credentials or account blocked.');
+    const result = await login(username, pin);
+    if (!result.ok) {
+      Alert.alert('Error', result.message || 'Invalid credentials or account blocked.');
     }
   };
 
@@ -53,7 +53,6 @@ export default function LoginScreen() {
               value={pin}
               onChangeText={setPin}
               secureTextEntry
-              keyboardType="numeric"
               placeholderTextColor="#9CA3AF"
             />
           </View>
@@ -64,7 +63,7 @@ export default function LoginScreen() {
         </View>
         
         <View style={styles.hintContainer}>
-          <Text style={styles.hintText}>Admin: admin / admin123</Text>
+          <Text style={styles.hintText}>Admin: admin / admin@123</Text>
           <Text style={styles.hintText}>Student: john / 1234</Text>
         </View>
       </View>

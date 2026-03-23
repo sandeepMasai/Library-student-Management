@@ -12,6 +12,10 @@ export default function StudentHome() {
 
   const daysRemaining = differenceInDays(new Date(currentUser.expiryDate), new Date());
   const isExpired = daysRemaining < 0;
+  const feeBg =
+    currentUser.feeStatus === 'Paid' ? '#D1FAE5' : currentUser.feeStatus === 'Pending' ? '#FEE2E2' : '#FEF3C7';
+  const feeText =
+    currentUser.feeStatus === 'Paid' ? '#10B981' : currentUser.feeStatus === 'Pending' ? '#EF4444' : '#D97706';
 
   return (
     <ScrollView style={styles.container}>
@@ -27,65 +31,54 @@ export default function StudentHome() {
 
       <View style={styles.content}>
         <View style={styles.profileCard}>
-          <View style={styles.profileHeader}>
+          {/* Blue top banner like your screenshot */}
+          <View style={styles.banner}>
             <View style={styles.avatarContainer}>
               <Text style={styles.avatarText}>{currentUser.name.charAt(0)}</Text>
             </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{currentUser.name}</Text>
-              <Text style={styles.profileId}>@{currentUser.username}</Text>
-            </View>
-            <View style={[styles.statusBadge, { backgroundColor: isExpired ? '#FEE2E2' : '#D1FAE5' }]}>
-              <Text style={[styles.statusText, { color: isExpired ? '#EF4444' : '#10B981' }]}>
-                {isExpired ? 'Expired' : 'Active'}
-              </Text>
+            <View style={styles.bannerText}>
+              <Text style={styles.bannerName}>{currentUser.name}</Text>
+              <Text style={styles.bannerSub}>Student Profile</Text>
             </View>
           </View>
 
-          <View style={styles.divider} />
-
-          <View style={styles.detailsGrid}>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Join Date</Text>
-              <Text style={styles.detailValue}>{format(new Date(currentUser.joinDate), 'MMM dd, yyyy')}</Text>
+          <View style={styles.cardBody}>
+            <View style={styles.row}>
+              <Ionicons name="calendar-outline" size={22} color="#60A5FA" />
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>Join Date</Text>
+                <Text style={styles.rowValue}>{format(new Date(currentUser.joinDate), 'MMM dd, yyyy')}</Text>
+              </View>
             </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Expiry Date</Text>
-              <Text style={styles.detailValue}>{format(new Date(currentUser.expiryDate), 'MMM dd, yyyy')}</Text>
-            </View>
-          </View>
 
-          <View style={[styles.alertBox, { backgroundColor: isExpired ? '#FEF2F2' : (daysRemaining <= 5 ? '#FFFBEB' : '#ECFDF5') }]}>
-            <Ionicons 
-              name={isExpired ? "alert-circle" : (daysRemaining <= 5 ? "warning" : "checkmark-circle")} 
-              size={24} 
-              color={isExpired ? "#EF4444" : (daysRemaining <= 5 ? "#D97706" : "#10B981")} 
-            />
-            <View style={styles.alertTextContainer}>
-              <Text style={[styles.alertTitle, { color: isExpired ? "#991B1B" : (daysRemaining <= 5 ? "#92400E" : "#065F46") }]}>
-                {isExpired ? 'Membership Expired' : `${daysRemaining} Days Remaining`}
-              </Text>
-              <Text style={[styles.alertDesc, { color: isExpired ? "#B91C1C" : (daysRemaining <= 5 ? "#B45309" : "#047857") }]}>
-                {isExpired ? 'Please renew your membership to continue access.' : 'Your membership is active and valid.'}
-              </Text>
+            <View style={styles.row}>
+              <Ionicons name="calendar-outline" size={22} color="#60A5FA" />
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>Expiry Date</Text>
+                <Text style={styles.rowValue}>{format(new Date(currentUser.expiryDate), 'MMM dd, yyyy')}</Text>
+              </View>
             </View>
-          </View>
-        </View>
 
-        <Text style={styles.sectionTitle}>Fee Status</Text>
-        <View style={styles.feeCard}>
-          <View style={styles.feeHeader}>
-            <Ionicons name="wallet" size={24} color="#10B981" />
-            <Text style={styles.feeTitle}>Current Plan</Text>
-          </View>
-          <View style={styles.feeDetails}>
-            <Text style={styles.feeAmount}>₹{currentUser.feeAmount}</Text>
-            <View style={[styles.feeStatusBadge, { 
-              backgroundColor: currentUser.feeStatus === 'Paid' ? '#D1FAE5' : (currentUser.feeStatus === 'Pending' ? '#FEE2E2' : '#FEF3C7')
-            }]}>
-              <Text style={[styles.feeStatusText, {
-                color: currentUser.feeStatus === 'Paid' ? '#10B981' : (currentUser.feeStatus === 'Pending' ? '#EF4444' : '#D97706')
-              }]}>{currentUser.feeStatus}</Text>
+            <View style={styles.row}>
+              <Ionicons
+                name={isExpired ? 'alert-circle' : 'hourglass-outline'}
+                size={22}
+                color={isExpired ? '#EF4444' : '#10B981'}
+              />
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>Remaining Days</Text>
+                <Text style={[styles.remainingValue, { color: isExpired ? '#EF4444' : '#10B981' }]}>
+                  {Math.max(0, daysRemaining)} Days
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.feeBlock}>
+              <Text style={styles.feeLabel}>Fee Status</Text>
+              <View style={[styles.feePill, { backgroundColor: feeBg }]}>
+                <Text style={[styles.feePillText, { color: feeText }]}>{currentUser.feeStatus}</Text>
+              </View>
+              <Text style={styles.feeAmountText}>₹{currentUser.feeAmount}</Text>
             </View>
           </View>
         </View>
@@ -129,23 +122,25 @@ const styles = StyleSheet.create({
   profileCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 5,
-    marginBottom: 24,
   },
-  profileHeader: {
+  banner: {
+    backgroundColor: '#2563EB',
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 18,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   avatarContainer: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#10B981',
+    backgroundColor: '#60A5FA',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -154,115 +149,70 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
-  profileInfo: {
-    flex: 1,
+  bannerText: {
     marginLeft: 16,
+    flex: 1,
   },
-  profileName: {
-    fontSize: 18,
+  bannerName: {
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#fff',
   },
-  profileId: {
-    fontSize: 14,
-    color: '#6B7280',
+  bannerSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.9)',
     marginTop: 2,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  cardBody: {
+    padding: 18,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
-    marginVertical: 16,
-  },
-  detailsGrid: {
+  row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  detailItem: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  alertBox: {
-    flexDirection: 'row',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'flex-start',
-  },
-  alertTextContainer: {
+  rowText: {
     marginLeft: 12,
     flex: 1,
   },
-  alertTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  alertDesc: {
+  rowLabel: {
     fontSize: 12,
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  feeCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  feeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  feeTitle: {
-    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 2,
     fontWeight: '600',
-    color: '#374151',
-    marginLeft: 8,
   },
-  feeDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  feeAmount: {
-    fontSize: 28,
-    fontWeight: 'bold',
+  rowValue: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
   },
-  feeStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  remainingValue: {
+    fontSize: 26,
+    fontWeight: '800',
   },
-  feeStatusText: {
+  feeBlock: {
+    marginTop: 8,
+  },
+  feeLabel: {
     fontSize: 14,
-    fontWeight: 'bold',
-  }
+    color: '#6B7280',
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  feePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  feePillText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  feeAmountText: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+  },
 });

@@ -2,13 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useAppStore, FeeStatus } from '../../store';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function AdminStudentForm() {
   const route = useRoute<any>();
   const navigation = useNavigation();
   const studentId = route.params?.studentId;
-  
+
   const users = useAppStore((state) => state.users);
+  const fetchStudents = useAppStore((state) => state.fetchStudents);
   const addStudent = useAppStore((state) => state.addStudent);
   const updateStudent = useAppStore((state) => state.updateStudent);
 
@@ -20,9 +24,11 @@ export default function AdminStudentForm() {
     username: '',
     mobile: '',
     pin: '',
+    joinDate: new Date().toISOString().slice(0, 10),
     feeAmount: '',
     feeStatus: 'Paid' as FeeStatus,
   });
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     if (existingStudent) {
@@ -31,44 +37,56 @@ export default function AdminStudentForm() {
         username: existingStudent.username,
         mobile: existingStudent.mobile,
         pin: existingStudent.pin,
+        joinDate: existingStudent.joinDate.slice(0, 10),
         feeAmount: existingStudent.feeAmount.toString(),
         feeStatus: existingStudent.feeStatus,
       });
     }
   }, [existingStudent]);
 
-  const handleSave = () => {
-    if (!formData.name || !formData.username || !formData.mobile || !formData.pin || !formData.feeAmount) {
+  const handleSave = async () => {
+    if (!formData.name || !formData.username || !formData.mobile || !formData.pin || !formData.feeAmount || !formData.joinDate) {
       Alert.alert('Error', 'Please fill all fields');
       return;
     }
 
+    const parsedJoinDate = new Date(formData.joinDate);
+    if (Number.isNaN(parsedJoinDate.getTime())) {
+      Alert.alert('Error', 'Joining date is invalid. Use YYYY-MM-DD');
+      return;
+    }
+
+    const payload = {
+      name: formData.name,
+      username: formData.username,
+      mobile: formData.mobile,
+      pin: formData.pin,
+      joinDate: parsedJoinDate.toISOString(),
+      feeAmount: Number(formData.feeAmount),
+      feeStatus: formData.feeStatus,
+    };
+
+    let result: { ok: boolean; message?: string };
     if (isEditing) {
-      updateStudent(studentId, {
-        name: formData.name,
-        username: formData.username,
-        mobile: formData.mobile,
-        pin: formData.pin,
-        feeAmount: Number(formData.feeAmount),
-        feeStatus: formData.feeStatus,
-      });
+      result = await updateStudent(studentId, payload);
     } else {
-      addStudent({
-        name: formData.name,
-        username: formData.username,
-        mobile: formData.mobile,
-        pin: formData.pin,
-        feeAmount: Number(formData.feeAmount),
-        feeStatus: formData.feeStatus,
+      result = await addStudent({
+        ...payload,
         isBlocked: false,
       });
     }
-    
+
+    if (!result.ok) {
+      Alert.alert('Error', result.message || 'Failed to save student');
+      return;
+    }
+
+    await fetchStudents();
     navigation.goBack();
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={100}
@@ -79,7 +97,7 @@ export default function AdminStudentForm() {
           <TextInput
             style={styles.input}
             value={formData.name}
-            onChangeText={(text) => setFormData({...formData, name: text})}
+            onChangeText={(text) => setFormData({ ...formData, name: text })}
             placeholder="John Doe"
           />
         </View>
@@ -89,7 +107,7 @@ export default function AdminStudentForm() {
           <TextInput
             style={styles.input}
             value={formData.username}
-            onChangeText={(text) => setFormData({...formData, username: text})}
+            onChangeText={(text) => setFormData({ ...formData, username: text })}
             placeholder="johndoe"
             autoCapitalize="none"
           />
@@ -100,7 +118,7 @@ export default function AdminStudentForm() {
           <TextInput
             style={styles.input}
             value={formData.mobile}
-            onChangeText={(text) => setFormData({...formData, mobile: text})}
+            onChangeText={(text) => setFormData({ ...formData, mobile: text })}
             placeholder="1234567890"
             keyboardType="phone-pad"
           />
@@ -111,7 +129,7 @@ export default function AdminStudentForm() {
           <TextInput
             style={styles.input}
             value={formData.pin}
-            onChangeText={(text) => setFormData({...formData, pin: text})}
+            onChangeText={(text) => setFormData({ ...formData, pin: text })}
             placeholder="1234"
             keyboardType="numeric"
             secureTextEntry={!isEditing}
@@ -119,11 +137,32 @@ export default function AdminStudentForm() {
         </View>
 
         <View style={styles.formGroup}>
+          <Text style={styles.label}>Joining Date</Text>
+          <TouchableOpacity style={styles.dateInput} onPress={() => setShowDatePicker(true)}>
+            <Ionicons name="calendar-outline" size={18} color="#4B5563" />
+            <Text style={styles.dateText}>{formData.joinDate}</Text>
+          </TouchableOpacity>
+          {showDatePicker && (
+            <DateTimePicker
+              value={new Date(formData.joinDate)}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_event, selectedDate) => {
+                if (Platform.OS !== 'ios') setShowDatePicker(false);
+                if (selectedDate) {
+                  setFormData({ ...formData, joinDate: format(selectedDate, 'yyyy-MM-dd') });
+                }
+              }}
+            />
+          )}
+        </View>
+
+        <View style={styles.formGroup}>
           <Text style={styles.label}>Fee Amount (₹)</Text>
           <TextInput
             style={styles.input}
             value={formData.feeAmount}
-            onChangeText={(text) => setFormData({...formData, feeAmount: text})}
+            onChangeText={(text) => setFormData({ ...formData, feeAmount: text })}
             placeholder="500"
             keyboardType="numeric"
           />
@@ -139,7 +178,7 @@ export default function AdminStudentForm() {
                   styles.statusBtn,
                   formData.feeStatus === status && styles.statusBtnActive
                 ]}
-                onPress={() => setFormData({...formData, feeStatus: status as FeeStatus})}
+                onPress={() => setFormData({ ...formData, feeStatus: status as FeeStatus })}
               >
                 <Text style={[
                   styles.statusText,
@@ -185,6 +224,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 50,
     fontSize: 16,
+  },
+  dateInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#111827',
   },
   statusContainer: {
     flexDirection: 'row',

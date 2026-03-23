@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { useAppStore } from '../../store';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,17 +7,26 @@ import { format } from 'date-fns';
 export default function AdminNotifications() {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  
+
   const notifications = useAppStore((state) => state.notifications);
+  const fetchNotifications = useAppStore((state) => state.fetchNotifications);
   const sendNotification = useAppStore((state) => state.sendNotification);
 
-  const handleSend = () => {
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const handleSend = async () => {
     if (!title || !message) {
       Alert.alert('Error', 'Please enter title and message');
       return;
     }
-    
-    sendNotification(title, message);
+
+    const result = await sendNotification(title, message);
+    if (!result.ok) {
+      Alert.alert('Error', result.message || 'Failed to send notification');
+      return;
+    }
     setTitle('');
     setMessage('');
     Alert.alert('Success', 'Message sent to all students');

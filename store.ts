@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { addDays, differenceInDays, isSameDay, format } from 'date-fns';
 
 export type Role = 'admin' | 'student';
@@ -32,32 +34,55 @@ export interface Notification {
   targetId?: string; // 'all' or studentId
 }
 
+export interface StudentInput {
+  name: string;
+  username: string;
+  mobile: string;
+  pin: string;
+  joinDate?: string;
+  feeStatus: FeeStatus;
+  feeAmount: number;
+  isBlocked: boolean;
+}
+
+export interface QrTokenInfo {
+  token: string | null;
+  generatedAt?: string;
+  expiresAt?: string;
+  created?: boolean;
+}
+
 interface AppState {
   currentUser: User | null;
+  authToken: string | null;
   users: User[];
   attendances: Attendance[];
   notifications: Notification[];
   dailyQrToken: string | null;
-  
+
   // Auth
-  login: (usernameOrMobile: string, pin: string) => boolean;
+  login: (usernameOrMobile: string, pin: string) => Promise<{ ok: boolean; message?: string }>;
   logout: () => void;
-  
+
   // Admin - Students
-  addStudent: (student: Omit<User, 'id' | 'role' | 'joinDate' | 'expiryDate'>) => void;
-  updateStudent: (id: string, data: Partial<User>) => void;
-  deleteStudent: (id: string) => void;
-  toggleBlockStudent: (id: string) => void;
-  
+  fetchStudents: () => Promise<void>;
+  addStudent: (student: StudentInput) => Promise<{ ok: boolean; message?: string }>;
+  updateStudent: (id: string, data: Partial<User>) => Promise<{ ok: boolean; message?: string }>;
+  deleteStudent: (id: string) => Promise<{ ok: boolean; message?: string }>;
+  toggleBlockStudent: (id: string) => Promise<{ ok: boolean; message?: string }>;
+
   // Admin - Attendance
-  generateDailyQr: () => string;
-  
+  generateDailyQr: () => Promise<QrTokenInfo | null>;
+  fetchTodayAttendance: () => Promise<void>;
+  fetchAttendanceByDate: (date: string) => Promise<void>;
+
   // Admin - Notifications
-  sendNotification: (title: string, message: string, targetId?: string) => void;
-  
+  fetchNotifications: (studentId?: string) => Promise<void>;
+  sendNotification: (title: string, message: string, targetId?: string) => Promise<{ ok: boolean; message?: string }>;
+
   // Student - Attendance
-  markAttendance: (token: string) => boolean;
-  
+  markAttendance: (token: string) => Promise<{ ok: boolean; alreadyMarked?: boolean; message?: string }>;
+
   // Helpers
   getTodayAttendance: () => Attendance[];
   getStudentAttendance: (studentId: string) => Attendance[];
@@ -70,7 +95,7 @@ const initialAdmin: User = {
   name: 'Admin',
   username: 'admin',
   mobile: '0000000000',
-  pin: 'admin123',
+  pin: 'admin@123',
   joinDate: new Date().toISOString(),
   expiryDate: addDays(new Date(), 3650).toISOString(),
   feeStatus: 'Paid',
@@ -78,23 +103,49 @@ const initialAdmin: User = {
   isBlocked: false,
 };
 
-const initialStudent: User = {
-  id: 'student-1',
-  role: 'student',
-  name: 'John Doe',
-  username: 'john',
-  mobile: '1234567890',
-  pin: '1234',
-  joinDate: new Date().toISOString(),
-  expiryDate: addDays(new Date(), 30).toISOString(),
-  feeStatus: 'Paid',
-  feeAmount: 500,
-  isBlocked: false,
-};
+function resolveApiUrl() {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as unknown as { manifest2?: { extra?: { expoGo?: { debuggerHost?: string } } } }).manifest2?.extra
+      ?.expoGo?.debuggerHost;
+
+  const host = hostUri?.split(':')[0];
+  if (host) {
+    return `http://${host}:5000`;
+  }
+
+  // Emulator fallback when host cannot be derived.
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5000';
+  }
+
+  return 'http://localhost:5000';
+}
+
+const API_URL = resolveApiUrl();
+
+async function parseApiError(response: Response) {
+  try {
+    const data = await response.json();
+    return data?.message || 'Request failed';
+  } catch {
+    return 'Request failed';
+  }
+}
+
+function mergeStudentsInUsers(currentUsers: User[], students: User[]) {
+  const nonStudents = currentUsers.filter((u) => u.role !== 'student');
+  return [...nonStudents, ...students];
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
-  users: [initialAdmin, initialStudent],
+  authToken: null,
+  users: [initialAdmin],
   attendances: [],
   notifications: [
     {
@@ -107,90 +158,225 @@ export const useAppStore = create<AppState>((set, get) => ({
   ],
   dailyQrToken: null,
 
-  login: (usernameOrMobile, pin) => {
-    const { users } = get();
-    const user = users.find(
-      (u) => (u.username === usernameOrMobile || u.mobile === usernameOrMobile) && u.pin === pin
-    );
-    if (user && !user.isBlocked) {
-      set({ currentUser: user });
-      return true;
+  login: async (usernameOrMobile, pin) => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrMobile, pin }),
+      });
+
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+
+      const data = (await response.json()) as { user: User; authToken?: string };
+      const authenticatedUser = data.user;
+
+      set((state) => ({
+        currentUser: authenticatedUser,
+        authToken: data.authToken || null,
+        users:
+          authenticatedUser.role === 'admin'
+            ? [authenticatedUser, ...state.users.filter((u) => u.role === 'student')]
+            : [initialAdmin, ...state.users.filter((u) => u.role === 'student' || u.id === authenticatedUser.id)],
+      }));
+
+      if (authenticatedUser.role === 'admin') {
+        await get().fetchStudents();
+      }
+
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
     }
-    return false;
   },
 
-  logout: () => set({ currentUser: null }),
+  logout: () => set({ currentUser: null, authToken: null }),
 
-  addStudent: (studentData) => {
-    const now = new Date();
-    const newStudent: User = {
-      ...studentData,
-      id: `student-${Date.now()}`,
-      role: 'student',
-      joinDate: now.toISOString(),
-      expiryDate: addDays(now, 30).toISOString(),
-    };
-    set((state) => ({ users: [...state.users, newStudent] }));
+  fetchStudents: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/students`);
+      if (!response.ok) return;
+      const students = (await response.json()) as User[];
+      set((state) => ({ users: mergeStudentsInUsers(state.users, students) }));
+    } catch {
+      // Keep existing local users when backend is unavailable.
+    }
   },
 
-  updateStudent: (id, data) => {
-    set((state) => ({
-      users: state.users.map((u) => (u.id === id ? { ...u, ...data } : u)),
-    }));
+  addStudent: async (studentData) => {
+    try {
+      const response = await fetch(`${API_URL}/api/students`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(studentData),
+      });
+
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+
+      const created = (await response.json()) as User;
+      set((state) => ({ users: [...state.users.filter((u) => u.role !== 'student' || u.id !== created.id), created] }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
   },
 
-  deleteStudent: (id) => {
-    set((state) => ({
-      users: state.users.filter((u) => u.id !== id),
-    }));
+  updateStudent: async (id, data) => {
+    try {
+      const response = await fetch(`${API_URL}/api/students/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+
+      const updated = (await response.json()) as User;
+      set((state) => ({
+        users: state.users.map((u) => (u.id === id ? updated : u)),
+        currentUser: state.currentUser?.id === id ? updated : state.currentUser,
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
   },
 
-  toggleBlockStudent: (id) => {
-    set((state) => ({
-      users: state.users.map((u) => (u.id === id ? { ...u, isBlocked: !u.isBlocked } : u)),
-    }));
+  deleteStudent: async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/api/students/${id}`, { method: 'DELETE' });
+      if (!response.ok && response.status !== 204) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+
+      set((state) => ({
+        users: state.users.filter((u) => u.id !== id),
+        currentUser: state.currentUser?.id === id ? null : state.currentUser,
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
   },
 
-  generateDailyQr: () => {
-    const token = `LIB-ATT-${format(new Date(), 'yyyy-MM-dd')}-${Math.random().toString(36).substring(7)}`;
-    set({ dailyQrToken: token });
-    return token;
+  toggleBlockStudent: async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/api/students/${id}/block`, { method: 'PATCH' });
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+
+      const updated = (await response.json()) as User;
+      set((state) => ({
+        users: state.users.map((u) => (u.id === id ? updated : u)),
+        currentUser: state.currentUser?.id === id ? updated : state.currentUser,
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
   },
 
-  sendNotification: (title, message, targetId = 'all') => {
-    const newNotif: Notification = {
-      id: `notif-${Date.now()}`,
-      title,
-      message,
-      date: new Date().toISOString(),
-      targetId,
-    };
-    set((state) => ({ notifications: [newNotif, ...state.notifications] }));
+  generateDailyQr: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/attendance/token`, { method: 'POST' });
+      if (!response.ok) return null;
+      const data = (await response.json()) as QrTokenInfo;
+      set({ dailyQrToken: data.token || null });
+      return data;
+    } catch {
+      return null;
+    }
   },
 
-  markAttendance: (token) => {
-    const { currentUser, dailyQrToken, attendances } = get();
-    if (!currentUser || currentUser.role !== 'student') return false;
-    
-    // In a real app we'd validate the token against the backend
-    // Here we just check if it matches the generated one or starts with LIB-ATT
-    if (token !== dailyQrToken && !token.startsWith('LIB-ATT')) return false;
+  fetchTodayAttendance: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/attendance/today`);
+      if (!response.ok) return;
+      const list = (await response.json()) as Attendance[];
+      set({ attendances: list });
+    } catch {
+      // Keep local state if backend fails.
+    }
+  },
 
-    const today = new Date();
-    const alreadyMarked = attendances.some(
-      (a) => a.studentId === currentUser.id && isSameDay(new Date(a.date), today)
-    );
+  fetchAttendanceByDate: async (date) => {
+    try {
+      const response = await fetch(`${API_URL}/api/attendance?date=${encodeURIComponent(date)}`);
+      if (!response.ok) return;
+      const list = (await response.json()) as Attendance[];
+      set({ attendances: list });
+    } catch {
+      // Keep local state if backend fails.
+    }
+  },
 
-    if (alreadyMarked) return true; // Already marked today
+  fetchNotifications: async (studentId) => {
+    try {
+      const query = studentId ? `?studentId=${encodeURIComponent(studentId)}` : '';
+      const response = await fetch(`${API_URL}/api/notifications${query}`);
+      if (!response.ok) return;
+      const list = (await response.json()) as Notification[];
+      set({ notifications: list });
+    } catch {
+      // Keep local state if backend fails.
+    }
+  },
 
-    const newAttendance: Attendance = {
-      id: `att-${Date.now()}`,
-      studentId: currentUser.id,
-      date: today.toISOString(),
-    };
+  sendNotification: async (title, message, targetId = 'all') => {
+    try {
+      const response = await fetch(`${API_URL}/api/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, message, targetId }),
+      });
 
-    set((state) => ({ attendances: [...state.attendances, newAttendance] }));
-    return true;
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+
+      const created = (await response.json()) as Notification;
+      set((state) => ({ notifications: [created, ...state.notifications] }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
+  },
+
+  markAttendance: async (token) => {
+    const { currentUser, authToken } = get();
+    if (!currentUser || currentUser.role !== 'student') {
+      return { ok: false, message: 'Only students can mark attendance' };
+    }
+    if (!authToken) {
+      return { ok: false, message: 'Unauthorized. Please login again.' };
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/attendance/mark`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+      const data = (await response.json()) as { ok: boolean; alreadyMarked?: boolean; message?: string };
+      await get().fetchTodayAttendance();
+      return { ok: true, alreadyMarked: Boolean(data.alreadyMarked), message: data.message };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
   },
 
   getTodayAttendance: () => {
@@ -210,7 +396,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!student) return [];
 
     const studentNotifs = notifications.filter((n) => n.targetId === 'all' || n.targetId === studentId);
-    
+
     // Auto-generate expiry reminders
     const daysRemaining = differenceInDays(new Date(student.expiryDate), new Date());
     if (daysRemaining <= 3 && daysRemaining >= 0) {

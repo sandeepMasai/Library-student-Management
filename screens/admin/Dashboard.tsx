@@ -1,19 +1,48 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useAppStore } from '../../store';
 import { Ionicons } from '@expo/vector-icons';
 import { differenceInDays } from 'date-fns';
+import { useNavigation } from '@react-navigation/native';
 
 export default function AdminDashboard() {
   const users = useAppStore((state) => state.users);
+  const fetchStudents = useAppStore((state) => state.fetchStudents);
+  const fetchTodayAttendance = useAppStore((state) => state.fetchTodayAttendance);
   const getTodayAttendance = useAppStore((state) => state.getTodayAttendance);
   const logout = useAppStore((state) => state.logout);
+  const navigation = useNavigation<any>();
+
+  const openAddStudent = () => {
+    try {
+      // Primary path: stack route
+      navigation.navigate('AdminStudentForm');
+    } catch {
+      // Fallback for nested navigation state issues
+      const parentNav = navigation.getParent();
+      parentNav?.navigate('AdminStudentForm');
+    }
+  };
+
+  const openAttendance = () => {
+    try {
+      // Explicitly target tab screen under AdminMain.
+      navigation.navigate('AdminMain', { screen: 'Attendance' });
+    } catch {
+      navigation.navigate('Attendance');
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
+    fetchTodayAttendance();
+  }, [fetchStudents, fetchTodayAttendance]);
 
   const students = users.filter((u) => u.role === 'student');
   const totalStudents = students.length;
-  
+
   const todayAttendance = getTodayAttendance().length;
-  
+
   const activeStudents = students.filter((s) => differenceInDays(new Date(s.expiryDate), new Date()) >= 0).length;
   const expiredStudents = totalStudents - activeStudents;
 
@@ -55,19 +84,24 @@ export default function AdminDashboard() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
-          {/* We'll handle navigation from the tab bar for these, but good to have visual shortcuts */}
-          <View style={styles.actionCard}>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={openAddStudent}
+          >
             <View style={[styles.actionIcon, { backgroundColor: '#4F46E5' }]}>
               <Ionicons name="person-add" size={24} color="#fff" />
             </View>
             <Text style={styles.actionText}>Add Student</Text>
-          </View>
-          <View style={styles.actionCard}>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={openAttendance}
+          >
             <View style={[styles.actionIcon, { backgroundColor: '#10B981' }]}>
               <Ionicons name="qr-code" size={24} color="#fff" />
             </View>
             <Text style={styles.actionText}>Generate QR</Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
     </ScrollView>

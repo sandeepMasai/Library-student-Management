@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput } from 'react-native';
 import { useAppStore } from '../../store';
 import QRCode from 'react-native-qrcode-svg';
 import { format } from 'date-fns';
@@ -8,33 +8,48 @@ import { Ionicons } from '@expo/vector-icons';
 export default function AdminAttendance() {
   const dailyQrToken = useAppStore((state) => state.dailyQrToken);
   const generateDailyQr = useAppStore((state) => state.generateDailyQr);
-  const getTodayAttendance = useAppStore((state) => state.getTodayAttendance);
+  const fetchTodayAttendance = useAppStore((state) => state.fetchTodayAttendance);
+  const fetchAttendanceByDate = useAppStore((state) => state.fetchAttendanceByDate);
   const users = useAppStore((state) => state.users);
+  const attendances = useAppStore((state) => state.attendances);
 
-  const [todayAtt, setTodayAtt] = useState(getTodayAttendance());
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [qrGeneratedAt, setQrGeneratedAt] = useState<string | null>(null);
+
+  const currentMonthKey = format(new Date(), 'yyyy-MM');
+  const qrMonthKey = qrGeneratedAt ? format(new Date(qrGeneratedAt), 'yyyy-MM') : null;
+  const isQrGeneratedThisMonth = Boolean(qrMonthKey && qrMonthKey === currentMonthKey);
 
   useEffect(() => {
-    if (!dailyQrToken) {
-      generateDailyQr();
-    }
-  }, []);
+    const init = async () => {
+      const qrInfo = await generateDailyQr();
+      if (qrInfo?.generatedAt) {
+        setQrGeneratedAt(qrInfo.generatedAt);
+      }
+      await fetchTodayAttendance();
+    };
+    init();
+  }, [dailyQrToken, fetchTodayAttendance, generateDailyQr]);
 
-  // Poll for updates (in a real app this would be real-time via websockets)
+  // Poll selected date list for near-live updates.
   useEffect(() => {
     const interval = setInterval(() => {
-      setTodayAtt(getTodayAttendance());
+      fetchAttendanceByDate(selectedDate);
     }, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchAttendanceByDate, selectedDate]);
+
+  const onApplyDateFilter = async () => {
+    await fetchAttendanceByDate(selectedDate);
+  };
 
   const renderAttendanceItem = ({ item }: { item: any }) => {
     const student = users.find(u => u.id === item.studentId);
-    if (!student) return null;
 
     return (
       <View style={styles.attCard}>
         <View style={styles.attInfo}>
-          <Text style={styles.attName}>{student.name}</Text>
+          <Text style={styles.attName}>{student?.name || `Student (${item.studentId.slice(0, 6)})`}</Text>
           <Text style={styles.attTime}>{format(new Date(item.date), 'hh:mm a')}</Text>
         </View>
         <Ionicons name="checkmark-circle" size={24} color="#10B981" />
@@ -45,9 +60,11 @@ export default function AdminAttendance() {
   return (
     <View style={styles.container}>
       <View style={styles.qrSection}>
-        <Text style={styles.qrTitle}>Today's Attendance QR</Text>
-        <Text style={styles.qrSubtitle}>{format(new Date(), 'EEEE, MMMM dd, yyyy')}</Text>
-        
+        <Text style={styles.qrTitle}>Attendance QR (30 Days)</Text>
+        <Text style={styles.qrSubtitle}>
+          Valid for 30 days - all students use same QR
+        </Text>
+
         <View style={styles.qrContainer}>
           {dailyQrToken ? (
             <QRCode
@@ -61,16 +78,43 @@ export default function AdminAttendance() {
           )}
         </View>
 
-        <TouchableOpacity style={styles.refreshBtn} onPress={() => generateDailyQr()}>
-          <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.refreshBtnText}>Refresh QR Code</Text>
-        </TouchableOpacity>
+        {isQrGeneratedThisMonth ? (
+          <View style={[styles.refreshBtn, styles.refreshBtnDisabled]}>
+            <Ionicons name="checkmark-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.refreshBtnText}>QR already generated this month</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={async () => {
+              const qrInfo = await generateDailyQr();
+              if (qrInfo?.generatedAt) {
+                setQrGeneratedAt(qrInfo.generatedAt);
+              }
+            }}
+          >
+            <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.refreshBtnText}>Generate This Month QR</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.listSection}>
-        <Text style={styles.listTitle}>Present Today ({todayAtt.length})</Text>
+        <View style={styles.filterRow}>
+          <TextInput
+            style={styles.dateInput}
+            value={selectedDate}
+            onChangeText={setSelectedDate}
+            placeholder="YYYY-MM-DD"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity style={styles.filterBtn} onPress={onApplyDateFilter}>
+            <Text style={styles.filterBtnText}>Filter</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.listTitle}>Present Students ({attendances.length})</Text>
         <FlatList
-          data={todayAtt}
+          data={attendances}
           renderItem={renderAttendanceItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
@@ -127,6 +171,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 8,
   },
+  refreshBtnDisabled: {
+    backgroundColor: '#6B7280',
+  },
   refreshBtnText: {
     color: '#fff',
     fontWeight: '600',
@@ -135,6 +182,30 @@ const styles = StyleSheet.create({
   listSection: {
     flex: 1,
     padding: 20,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  dateInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 42,
+  },
+  filterBtn: {
+    backgroundColor: '#4F46E5',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  filterBtnText: {
+    color: '#fff',
+    fontWeight: '600',
   },
   listTitle: {
     fontSize: 18,

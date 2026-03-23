@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useAppStore } from '../../store';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,84 +7,133 @@ import { useNavigation } from '@react-navigation/native';
 
 export default function AdminStudents() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const users = useAppStore((state) => state.users);
+  const fetchStudents = useAppStore((state) => state.fetchStudents);
   const deleteStudent = useAppStore((state) => state.deleteStudent);
   const toggleBlockStudent = useAppStore((state) => state.toggleBlockStudent);
   const navigation = useNavigation<any>();
 
   const students = users.filter((u) => u.role === 'student');
   const filteredStudents = students.filter(
-    (s) => 
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (s) =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.mobile.includes(searchQuery) ||
       s.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  useEffect(() => {
+    fetchStudents();
+  }, [fetchStudents]);
+
   const handleDelete = (id: string) => {
     Alert.alert('Delete Student', 'Are you sure you want to delete this student?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteStudent(id) }
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const result = await deleteStudent(id);
+          if (!result.ok) {
+            Alert.alert('Error', result.message || 'Failed to delete student');
+          }
+        }
+      }
     ]);
   };
 
   const renderStudent = ({ item }: { item: any }) => {
     const daysRemaining = differenceInDays(new Date(item.expiryDate), new Date());
     const isExpired = daysRemaining < 0;
+    const isExpanded = expandedStudentId === item.id;
 
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View>
+        <TouchableOpacity
+          style={styles.cardHeader}
+          activeOpacity={0.8}
+          onPress={() => setExpandedStudentId((prev) => (prev === item.id ? null : item.id))}
+        >
+          <View style={styles.headerLeft}>
             <Text style={styles.studentName}>{item.name}</Text>
-            <Text style={styles.studentUsername}>@{item.username} • {item.mobile}</Text>
+            <Text style={styles.studentUsername}>@{item.username}</Text>
           </View>
-          <View style={styles.badges}>
-            <View style={[styles.badge, { backgroundColor: isExpired ? '#FEE2E2' : '#D1FAE5' }]}>
-              <Text style={[styles.badgeText, { color: isExpired ? '#EF4444' : '#10B981' }]}>
-                {isExpired ? 'Expired' : 'Active'}
-              </Text>
-            </View>
-            {item.isBlocked && (
-              <View style={[styles.badge, { backgroundColor: '#F3F4F6', marginLeft: 4 }]}>
-                <Text style={[styles.badgeText, { color: '#4B5563' }]}>Blocked</Text>
+          <View style={styles.headerRight}>
+            <Ionicons
+              name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
+              size={18}
+              color="#6B7280"
+            />
+          </View>
+        </TouchableOpacity>
+
+        {isExpanded && (
+          <>
+            <View style={styles.badges}>
+              <View style={[styles.badge, { backgroundColor: isExpired ? '#FEE2E2' : '#D1FAE5' }]}>
+                <Text style={[styles.badgeText, { color: isExpired ? '#EF4444' : '#10B981' }]}>
+                  {isExpired ? 'Expired' : 'Active'}
+                </Text>
               </View>
-            )}
-          </View>
-        </View>
+              {item.isBlocked && (
+                <View style={[styles.badge, { backgroundColor: '#F3F4F6', marginLeft: 4 }]}>
+                  <Text style={[styles.badgeText, { color: '#4B5563' }]}>Blocked</Text>
+                </View>
+              )}
+            </View>
 
-        <View style={styles.cardBody}>
-          <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-            <Text style={styles.infoText}>Expires: {format(new Date(item.expiryDate), 'MMM dd, yyyy')}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="cash-outline" size={16} color="#6B7280" />
-            <Text style={styles.infoText}>Fee: {item.feeStatus} (₹{item.feeAmount})</Text>
-          </View>
-        </View>
+            <View style={styles.cardBody}>
+              <View style={styles.infoRow}>
+                <Ionicons name="call-outline" size={16} color="#6B7280" />
+                <Text style={styles.infoText}>Mobile: {item.mobile}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                <Text style={styles.infoText}>Join: {format(new Date(item.joinDate), 'MMM dd, yyyy')}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Ionicons name="calendar-clear-outline" size={16} color="#6B7280" />
+                <Text style={styles.infoText}>Expires: {format(new Date(item.expiryDate), 'MMM dd, yyyy')}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Ionicons name="cash-outline" size={16} color="#6B7280" />
+                <Text style={styles.infoText}>Fee: {item.feeStatus} (₹{item.feeAmount})</Text>
+              </View>
+            </View>
 
-        <View style={styles.cardActions}>
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: '#EEF2FF' }]}
-            onPress={() => navigation.navigate('AdminStudentForm', { studentId: item.id })}
-          >
-            <Ionicons name="create-outline" size={20} color="#4F46E5" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: item.isBlocked ? '#ECFDF5' : '#FEF2F2' }]}
-            onPress={() => toggleBlockStudent(item.id)}
-          >
-            <Ionicons name={item.isBlocked ? "lock-open-outline" : "lock-closed-outline"} size={20} color={item.isBlocked ? "#10B981" : "#EF4444"} />
-          </TouchableOpacity>
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#EEF2FF' }]}
+                onPress={() => navigation.navigate('AdminStudentForm', { studentId: item.id })}
+              >
+                <Ionicons name="create-outline" size={20} color="#4F46E5" />
+              </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: '#FEF2F2' }]}
-            onPress={() => handleDelete(item.id)}
-          >
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: item.isBlocked ? '#ECFDF5' : '#FEF2F2' }]}
+                onPress={async () => {
+                  const result = await toggleBlockStudent(item.id);
+                  if (!result.ok) {
+                    Alert.alert('Error', result.message || 'Failed to update block status');
+                  }
+                }}
+              >
+                <Ionicons
+                  name={item.isBlocked ? 'lock-open-outline' : 'lock-closed-outline'}
+                  size={20}
+                  color={item.isBlocked ? '#10B981' : '#EF4444'}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#FEF2F2' }]}
+                onPress={() => handleDelete(item.id)}
+              >
+                <Ionicons name="trash-outline" size={20} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </View>
     );
   };
@@ -95,7 +144,7 @@ export default function AdminStudents() {
         <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by name, mobile, username..."
+          placeholder="Search by name or username..."
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -114,7 +163,7 @@ export default function AdminStudents() {
         }
       />
 
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('AdminStudentForm')}
       >
@@ -165,8 +214,19 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+  },
+  headerLeft: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  headerRight: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
   },
   studentName: {
     fontSize: 18,
@@ -180,6 +240,8 @@ const styles = StyleSheet.create({
   },
   badges: {
     flexDirection: 'row',
+    marginTop: 12,
+    marginBottom: 10,
   },
   badge: {
     paddingHorizontal: 8,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useAppStore } from '../../store';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,23 +6,28 @@ import { format } from 'date-fns';
 
 export default function StudentNotifications() {
   const currentUser = useAppStore((state) => state.currentUser);
+  const fetchNotifications = useAppStore((state) => state.fetchNotifications);
   const getStudentNotifications = useAppStore((state) => state.getStudentNotifications);
 
   if (!currentUser) return null;
+
+  useEffect(() => {
+    fetchNotifications(currentUser.id);
+  }, [currentUser.id, fetchNotifications]);
 
   const notifications = getStudentNotifications(currentUser.id);
 
   const renderNotif = ({ item }: { item: any }) => {
     const isSystem = item.id.startsWith('sys-');
-    
+
     return (
       <View style={[styles.card, isSystem && styles.systemCard]}>
         <View style={styles.cardHeader}>
           <View style={[styles.iconContainer, isSystem && styles.systemIconContainer]}>
-            <Ionicons 
-              name={isSystem ? "warning" : "notifications"} 
-              size={20} 
-              color={isSystem ? "#D97706" : "#10B981"} 
+            <Ionicons
+              name={isSystem ? "warning" : "notifications"}
+              size={20}
+              color={isSystem ? "#D97706" : "#10B981"}
             />
           </View>
           <View style={styles.cardTitleContainer}>
