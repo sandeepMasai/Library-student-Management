@@ -18,6 +18,8 @@ export interface User {
   feeStatus: FeeStatus;
   feeAmount: number;
   isBlocked: boolean;
+  email?: string;
+  bio?: string;
 }
 
 export interface Attendance {
@@ -82,6 +84,10 @@ interface AppState {
 
   // Student - Attendance
   markAttendance: (token: string) => Promise<{ ok: boolean; alreadyMarked?: boolean; message?: string }>;
+  fetchStudentProfile: () => Promise<void>;
+  updateStudentProfile: (data: { name?: string; mobile?: string; username?: string; pin?: string }) => Promise<{ ok: boolean; message?: string }>;
+  fetchAdminProfile: () => Promise<void>;
+  updateAdminProfile: (data: { name?: string; mobile?: string; username?: string; email?: string; bio?: string }) => Promise<{ ok: boolean; message?: string }>;
 
   // Helpers
   getTodayAttendance: () => Attendance[];
@@ -183,7 +189,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
 
       if (authenticatedUser.role === 'admin') {
+        await get().fetchAdminProfile();
         await get().fetchStudents();
+      } else {
+        await get().fetchStudentProfile();
       }
 
       return { ok: true };
@@ -374,6 +383,94 @@ export const useAppStore = create<AppState>((set, get) => ({
       const data = (await response.json()) as { ok: boolean; alreadyMarked?: boolean; message?: string };
       await get().fetchTodayAttendance();
       return { ok: true, alreadyMarked: Boolean(data.alreadyMarked), message: data.message };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
+  },
+
+  fetchStudentProfile: async () => {
+    const { authToken } = get();
+    if (!authToken) return;
+    try {
+      const response = await fetch(`${API_URL}/api/students/profile`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (!response.ok) return;
+      const profile = (await response.json()) as User;
+      set((state) => ({
+        currentUser: profile,
+        users: state.users.map((u) => (u.id === profile.id ? profile : u)),
+      }));
+    } catch {
+      // Keep current profile when backend fails.
+    }
+  },
+
+  updateStudentProfile: async (data) => {
+    const { authToken } = get();
+    if (!authToken) return { ok: false, message: 'Unauthorized. Please login again.' };
+    try {
+      const response = await fetch(`${API_URL}/api/students/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+      const profile = (await response.json()) as User;
+      set((state) => ({
+        currentUser: profile,
+        users: state.users.map((u) => (u.id === profile.id ? profile : u)),
+      }));
+      return { ok: true };
+    } catch {
+      return { ok: false, message: `Backend unavailable (${API_URL})` };
+    }
+  },
+
+  fetchAdminProfile: async () => {
+    const { authToken, currentUser } = get();
+    if (!authToken || currentUser?.role !== 'admin') return;
+    try {
+      const response = await fetch(`${API_URL}/api/auth/admin/profile`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (!response.ok) return;
+      const profile = (await response.json()) as User;
+      set({ currentUser: profile });
+    } catch {
+      // Keep current profile when backend fails.
+    }
+  },
+
+  updateAdminProfile: async (data) => {
+    const { authToken, currentUser } = get();
+    if (!authToken || currentUser?.role !== 'admin') {
+      return { ok: false, message: 'Only admin can update profile' };
+    }
+    try {
+      const response = await fetch(`${API_URL}/api/auth/admin/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        return { ok: false, message: await parseApiError(response) };
+      }
+      const profile = (await response.json()) as User;
+      set({ currentUser: profile });
+      return { ok: true };
     } catch {
       return { ok: false, message: `Backend unavailable (${API_URL})` };
     }

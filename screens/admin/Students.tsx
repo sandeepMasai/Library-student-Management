@@ -1,153 +1,121 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
 import { useAppStore } from '../../store';
 import { Ionicons } from '@expo/vector-icons';
-import { differenceInDays, format } from 'date-fns';
+import { differenceInDays } from 'date-fns';
 import { useNavigation } from '@react-navigation/native';
 
 export default function AdminStudents() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'active' | 'inactive' | 'member'>('all');
   const users = useAppStore((state) => state.users);
   const fetchStudents = useAppStore((state) => state.fetchStudents);
-  const deleteStudent = useAppStore((state) => state.deleteStudent);
-  const toggleBlockStudent = useAppStore((state) => state.toggleBlockStudent);
   const navigation = useNavigation<any>();
 
   const students = users.filter((u) => u.role === 'student');
-  const filteredStudents = students.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.mobile.includes(searchQuery) ||
-      s.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStudents = students
+    .filter((s) => {
+      const q = searchQuery.toLowerCase();
+      return s.name.toLowerCase().includes(q) || s.mobile.includes(searchQuery) || s.username.toLowerCase().includes(q);
+    })
+    .filter((s) => {
+      if (filter === 'all') return true;
+      const daysRemaining = differenceInDays(new Date(s.expiryDate), new Date());
+      if (filter === 'active') return daysRemaining >= 0 && !s.isBlocked;
+      if (filter === 'inactive') return s.isBlocked || daysRemaining < 0;
+      if (filter === 'member') return s.feeStatus === 'Paid' || s.feeStatus === 'Half Paid';
+      return true;
+    });
 
   useEffect(() => {
     fetchStudents();
   }, [fetchStudents]);
 
-  const handleDelete = (id: string) => {
-    Alert.alert('Delete Student', 'Are you sure you want to delete this student?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const result = await deleteStudent(id);
-          if (!result.ok) {
-            Alert.alert('Error', result.message || 'Failed to delete student');
-          }
-        }
-      }
-    ]);
-  };
-
   const renderStudent = ({ item }: { item: any }) => {
     const daysRemaining = differenceInDays(new Date(item.expiryDate), new Date());
     const isExpired = daysRemaining < 0;
-    const isExpanded = expandedStudentId === item.id;
+    const checkedIn = daysRemaining >= 0 && !item.isBlocked;
+    const initials = item.name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part: string) => part[0]?.toUpperCase())
+      .join('');
 
     return (
       <View style={styles.card}>
         <TouchableOpacity
           style={styles.cardHeader}
           activeOpacity={0.8}
-          onPress={() => setExpandedStudentId((prev) => (prev === item.id ? null : item.id))}
+          onPress={() => navigation.navigate('AdminStudentForm', { studentId: item.id })}
         >
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials || 'ST'}</Text>
+          </View>
           <View style={styles.headerLeft}>
             <Text style={styles.studentName}>{item.name}</Text>
-            <Text style={styles.studentUsername}>@{item.username}</Text>
+            <View style={styles.mobileRow}>
+              <Ionicons name="call-outline" size={12} color="#4B5563" />
+              <Text style={styles.studentUsername}>+{item.mobile}</Text>
+            </View>
           </View>
-          <View style={styles.headerRight}>
-            <Ionicons
-              name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
-              size={18}
-              color="#6B7280"
-            />
+          <View style={styles.statusCol}>
+            <View style={[styles.statusPill, { backgroundColor: isExpired ? '#FEE2E2' : '#86EFAC' }]}>
+              <Text style={[styles.statusPillText, { color: isExpired ? '#DC2626' : '#166534' }]}>
+                {isExpired ? 'EXPIRED' : 'ACTIVE'}
+              </Text>
+            </View>
+            {checkedIn && (
+              <View style={[styles.statusPill, { backgroundColor: '#DBEAFE', marginTop: 6 }]}>
+                <Text style={[styles.statusPillText, { color: '#1D4ED8' }]}>CHECKED IN</Text>
+              </View>
+            )}
           </View>
         </TouchableOpacity>
-
-        {isExpanded && (
-          <>
-            <View style={styles.badges}>
-              <View style={[styles.badge, { backgroundColor: isExpired ? '#FEE2E2' : '#D1FAE5' }]}>
-                <Text style={[styles.badgeText, { color: isExpired ? '#EF4444' : '#10B981' }]}>
-                  {isExpired ? 'Expired' : 'Active'}
-                </Text>
-              </View>
-              {item.isBlocked && (
-                <View style={[styles.badge, { backgroundColor: '#F3F4F6', marginLeft: 4 }]}>
-                  <Text style={[styles.badgeText, { color: '#4B5563' }]}>Blocked</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.cardBody}>
-              <View style={styles.infoRow}>
-                <Ionicons name="call-outline" size={16} color="#6B7280" />
-                <Text style={styles.infoText}>Mobile: {item.mobile}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-                <Text style={styles.infoText}>Join: {format(new Date(item.joinDate), 'MMM dd, yyyy')}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons name="calendar-clear-outline" size={16} color="#6B7280" />
-                <Text style={styles.infoText}>Expires: {format(new Date(item.expiryDate), 'MMM dd, yyyy')}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons name="cash-outline" size={16} color="#6B7280" />
-                <Text style={styles.infoText}>Fee: {item.feeStatus} (₹{item.feeAmount})</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#EEF2FF' }]}
-                onPress={() => navigation.navigate('AdminStudentForm', { studentId: item.id })}
-              >
-                <Ionicons name="create-outline" size={20} color="#4F46E5" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: item.isBlocked ? '#ECFDF5' : '#FEF2F2' }]}
-                onPress={async () => {
-                  const result = await toggleBlockStudent(item.id);
-                  if (!result.ok) {
-                    Alert.alert('Error', result.message || 'Failed to update block status');
-                  }
-                }}
-              >
-                <Ionicons
-                  name={item.isBlocked ? 'lock-open-outline' : 'lock-closed-outline'}
-                  size={20}
-                  color={item.isBlocked ? '#10B981' : '#EF4444'}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#FEF2F2' }]}
-                onPress={() => handleDelete(item.id)}
-              >
-                <Ionicons name="trash-outline" size={20} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
       </View>
     );
   };
 
   return (
     <View style={styles.container}>
+      <View style={styles.topRow}>
+        <View style={styles.brandRow}>
+          <Ionicons name="menu" size={18} color="#1F2937" />
+          <Text style={styles.brandText}>LibTrack</Text>
+        </View>
+        <View style={styles.profileDot}>
+          <Ionicons name="person" size={14} color="#1F2937" />
+        </View>
+      </View>
+
+      <View style={styles.headerText}>
+        <Text style={styles.title}>Students</Text>
+        <Text style={styles.subtitle}>Manage member records and attendance status.</Text>
+      </View>
+
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by name or username..."
+          placeholder="Search by name or student ID..."
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
+      </View>
+
+      <View style={styles.filterRow}>
+        <TouchableOpacity style={[styles.filterChip, filter === 'all' && styles.filterChipActive]} onPress={() => setFilter('all')}>
+          <Text style={[styles.filterChipText, filter === 'all' && styles.filterChipTextActive]}>All Students</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.filterChip, filter === 'active' && styles.filterChipActive]} onPress={() => setFilter('active')}>
+          <Text style={[styles.filterChipText, filter === 'active' && styles.filterChipTextActive]}>Active</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.filterChip, filter === 'inactive' && styles.filterChipActive]} onPress={() => setFilter('inactive')}>
+          <Text style={[styles.filterChipText, filter === 'inactive' && styles.filterChipTextActive]}>Inactive</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.filterChip, filter === 'member' && styles.filterChipActive]} onPress={() => setFilter('member')}>
+          <Text style={[styles.filterChipText, filter === 'member' && styles.filterChipTextActive]}>Members</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -176,17 +144,60 @@ export default function AdminStudents() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#ECEFF1',
+    paddingTop: 12,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  brandText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F6FB6',
+  },
+  profileDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerText: {
+    paddingHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 42,
+    fontWeight: '800',
+    color: '#111827',
+    lineHeight: 46,
+  },
+  subtitle: {
+    marginTop: 4,
+    color: '#4B5563',
+    fontSize: 14,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#E5E7EB',
     margin: 16,
+    marginTop: 10,
+    marginBottom: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
     height: 48,
   },
   searchIcon: {
@@ -198,13 +209,37 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
-    paddingTop: 0,
+    paddingTop: 10,
+    paddingBottom: 80,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  filterChip: {
+    backgroundColor: '#E5E7EB',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  filterChipActive: {
+    backgroundColor: '#0F6FB6',
+  },
+  filterChipText: {
+    color: '#4B5563',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterChipTextActive: {
+    color: '#fff',
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -213,73 +248,53 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#4B5563',
+    fontSize: 16,
+    fontWeight: '800',
   },
   headerLeft: {
     flex: 1,
-    paddingRight: 8,
+    paddingRight: 10,
   },
-  headerRight: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  mobileRow: {
+    marginTop: 3,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
   },
   studentName: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
   },
   studentUsername: {
-    fontSize: 14,
+    marginLeft: 4,
+    fontSize: 13,
     color: '#6B7280',
-    marginTop: 2,
   },
-  badges: {
-    flexDirection: 'row',
-    marginTop: 12,
-    marginBottom: 10,
+  statusCol: {
+    alignItems: 'flex-end',
   },
-  badge: {
-    paddingHorizontal: 8,
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
   },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cardBody: {
-    marginBottom: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#4B5563',
-    marginLeft: 8,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    paddingTop: 12,
-    gap: 8,
-  },
-  actionBtn: {
-    padding: 8,
-    borderRadius: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   fab: {
     position: 'absolute',

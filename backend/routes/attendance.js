@@ -155,6 +155,27 @@ router.get("/today", async (_req, res) => {
   }
 });
 
+router.get("/student-logs/:studentId", async (req, res) => {
+  try {
+    const studentId = String(req.params.studentId || "").trim();
+    if (!studentId) {
+      return res.status(400).json({ message: "studentId is required" });
+    }
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit || 10)));
+    const list = await Attendance.find({ studentId }).sort({ date: -1 }).limit(limit);
+    return res.json(
+      list.map((item) => ({
+        id: item._id.toString(),
+        date: item.date instanceof Date ? item.date.toISOString() : new Date(item.date).toISOString(),
+        attendanceDate: item.attendanceDate,
+        status: "completed",
+      }))
+    );
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to fetch student activity", error: error.message });
+  }
+});
+
 router.get("/student/:studentId", async (req, res) => {
   try {
     const studentId = String(req.params.studentId || "").trim();

@@ -12,11 +12,14 @@ import AdminDashboard from './screens/admin/Dashboard';
 import AdminStudents from './screens/admin/Students';
 import AdminStudentForm from './screens/admin/StudentForm';
 import AdminAttendance from './screens/admin/Attendance';
+import AdminQrCode from './screens/admin/QrCode';
 import AdminNotifications from './screens/admin/Notifications';
+import AdminProfile from './screens/admin/Profile';
 import StudentHome from './screens/student/Home';
 import StudentScanQR from './screens/student/ScanQR';
 import StudentNotifications from './screens/student/Notifications';
 import StudentCalendarScreen from './screens/student/CalendarScreen';
+import StudentProfile from './screens/student/Profile';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -30,6 +33,7 @@ function AdminTabs() {
           if (route.name === 'Dashboard') iconName = focused ? 'grid' : 'grid-outline';
           else if (route.name === 'Students') iconName = focused ? 'people' : 'people-outline';
           else if (route.name === 'Attendance') iconName = focused ? 'calendar' : 'calendar-outline';
+          else if (route.name === 'QR Code') iconName = focused ? 'qr-code' : 'qr-code-outline';
           else if (route.name === 'Notifications') iconName = focused ? 'notifications' : 'notifications-outline';
           return <Ionicons name={iconName as any} size={size} color={color} />;
         },
@@ -43,6 +47,7 @@ function AdminTabs() {
       <Tab.Screen name="Dashboard" component={AdminDashboard} />
       <Tab.Screen name="Students" component={AdminStudents} />
       <Tab.Screen name="Attendance" component={AdminAttendance} />
+      <Tab.Screen name="QR Code" component={AdminQrCode} />
       <Tab.Screen name="Notifications" component={AdminNotifications} />
     </Tab.Navigator>
   );
@@ -58,6 +63,7 @@ function StudentTabs() {
           else if (route.name === 'Scan Attendance') iconName = focused ? 'qr-code' : 'qr-code-outline';
           else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
           else if (route.name === 'Notifications') iconName = focused ? 'notifications' : 'notifications-outline';
+          else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
           return <Ionicons name={iconName as any} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#10B981',
@@ -71,6 +77,7 @@ function StudentTabs() {
       <Tab.Screen name="Scan Attendance" component={StudentScanQR} />
       <Tab.Screen name="Calendar" component={StudentCalendarScreen} />
       <Tab.Screen name="Notifications" component={StudentNotifications} />
+      <Tab.Screen name="Profile" component={StudentProfile} />
     </Tab.Navigator>
   );
 }
@@ -93,6 +100,16 @@ export default function App() {
               options={{
                 headerShown: true,
                 title: 'Student Details',
+                headerStyle: { backgroundColor: '#4F46E5' },
+                headerTintColor: '#fff',
+              }}
+            />
+            <Stack.Screen
+              name="AdminProfile"
+              component={AdminProfile}
+              options={{
+                headerShown: true,
+                title: 'Admin Profile',
                 headerStyle: { backgroundColor: '#4F46E5' },
                 headerTintColor: '#fff',
               }}

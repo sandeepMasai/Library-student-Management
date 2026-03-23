@@ -1,7 +1,9 @@
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const Student = require("../models/Student");
 
 const router = express.Router();
+const AUTH_JWT_SECRET = process.env.AUTH_JWT_SECRET || process.env.JWT_SECRET || "library-auth-secret";
 
 function toStudentResponse(student) {
   return {
@@ -29,6 +31,19 @@ function addThirtyDays(date) {
   const next = new Date(date);
   next.setDate(next.getDate() + 30);
   return next;
+}
+
+function getAuthStudentId(req) {
+  const authHeader = String(req.headers.authorization || "");
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, AUTH_JWT_SECRET);
+    if (!payload || payload.role !== "student" || !payload.userId) return null;
+    return String(payload.userId).trim();
+  } catch {
+    return null;
+  }
 }
 
 router.get("/", async (_req, res) => {
@@ -66,6 +81,42 @@ router.post("/", async (req, res) => {
       return res.status(409).json({ message: "Username or mobile already exists" });
     }
     return res.status(500).json({ message: "Failed to create student", error: error.message });
+  }
+});
+
+router.get("/profile", async (req, res) => {
+  try {
+    const studentId = getAuthStudentId(req);
+    if (!studentId) return res.status(401).json({ message: "Unauthorized" });
+
+    const student = await Student.findById(studentId);
+    if (!student) return res.status(404).json({ message: "Student not found" });
+    return res.json(toStudentResponse(student));
+  } catch (error) {
+    return res.status(500).json({ message: "Failed to fetch profile", error: error.message });
+  }
+});
+
+router.put("/profile", async (req, res) => {
+  try {
+    const studentId = getAuthStudentId(req);
+    if (!studentId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { name, mobile, username, pin } = req.body || {};
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (mobile !== undefined) updates.mobile = mobile;
+    if (username !== undefined) updates.username = username;
+    if (pin !== undefined) updates.pin = pin;
+
+    const updated = await Student.findByIdAndUpdate(studentId, updates, { new: true, runValidators: true });
+    if (!updated) return res.status(404).json({ message: "Student not found" });
+    return res.json(toStudentResponse(updated));
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Username or mobile already exists" });
+    }
+    return res.status(500).json({ message: "Failed to update profile", error: error.message });
   }
 });
 
